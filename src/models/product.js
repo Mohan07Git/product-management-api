@@ -68,9 +68,18 @@ function validateProduct(data, isUpdate = false) {
   return errors;
 }
 
+function isArchived(product) {
+  return product.archivedAt !== null && product.archivedAt !== undefined;
+}
+
+function filterArchived(result) {
+  return result.filter(p => !isArchived(p));
+}
+
 export const productModel = {
   findAll(filters = {}) {
     let result = Array.from(products.values());
+    result = filterArchived(result);
 
     if (filters.category) {
       result = result.filter(p => p.category === filters.category);
@@ -87,17 +96,32 @@ export const productModel = {
     if (filters.inStock !== undefined) {
       result = result.filter(p => filters.inStock ? p.stock > 0 : p.stock === 0);
     }
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase();
+      result = result.filter(p =>
+        p.name.toLowerCase().includes(searchLower) ||
+        p.description.toLowerCase().includes(searchLower)
+      );
+    }
 
     return result;
   },
 
   findById(id) {
-    return products.get(id) || null;
+    const product = products.get(id);
+    if (!product || isArchived(product)) {
+      return null;
+    }
+    return product;
   },
 
   findBySku(sku) {
     const id = skuIndex.get(sku);
-    return id ? products.get(id) : null;
+    const product = id ? products.get(id) : null;
+    if (!product || isArchived(product)) {
+      return null;
+    }
+    return product;
   },
 
   create(data) {
@@ -119,7 +143,8 @@ export const productModel = {
       price: Number(data.price.toFixed(2)),
       stock: data.stock || 0,
       status: data.status || 'active',
-      createdAt: now
+      createdAt: now,
+      archivedAt: null
     };
 
     products.set(product.id, product);
@@ -130,7 +155,7 @@ export const productModel = {
 
   update(id, patch) {
     const product = products.get(id);
-    if (!product) {
+    if (!product || isArchived(product)) {
       return null;
     }
 
@@ -165,11 +190,19 @@ export const productModel = {
 
   delete(id) {
     const product = products.get(id);
-    if (!product) {
+    if (!product || isArchived(product)) {
       return false;
     }
-    skuIndex.delete(product.sku);
-    products.delete(id);
+    product.archivedAt = new Date();
+    return true;
+  },
+
+  restore(id) {
+    const product = products.get(id);
+    if (!product || !isArchived(product)) {
+      return false;
+    }
+    product.archivedAt = null;
     return true;
   }
 };
